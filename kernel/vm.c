@@ -437,3 +437,54 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+
+void
+_vmprint(pagetable_t pagetable, int dep)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      for(int i = 0; i < dep; i++) {
+        printf(".. ");
+      }
+      printf("%d: pte %p pa %p\n", i, pte, child);
+      _vmprint((pagetable_t)child, dep + 1);
+    } else if(pte & PTE_V){
+      uint64 child = PTE2PA(pte);
+      for(int i = 0; i < dep; i++) {
+        printf(".. ");
+      }
+      printf("%d: pte %p pa %p\n", i, pte, child);
+      // printf("%d: pte %p pa %p", i, pte, child);
+    }
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  _vmprint(pagetable, 0);
+}
+
+int pgaccess(pagetable_t pagetable, uint64 start_va, int pg_num, uint64 result_va)
+{
+  uint64 result;
+  pte_t *pte;
+  for(int i = 0; i < pg_num; i++) {
+    if((pte = walk(pagetable, start_va, 0)) == 0) {
+      panic("pgaccess");
+    }
+    if((*pte) & PTE_A) {
+      result |= (1 << i);
+      (*pte) &= (~PTE_A);
+    }
+    start_va += PGSIZE;
+  }
+  copyout(pagetable, result_va, (char *)&result, sizeof(result));
+  return 0;
+}

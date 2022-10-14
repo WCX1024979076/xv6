@@ -75,6 +75,16 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  // I don't know, aaaaaa
+  uint64 start_va;
+  int pg_num;
+  uint64 result_va;
+
+  argaddr(0, &start_va);
+  argint(1, &pg_num);
+  argaddr(2, &result_va);
+  
+  pgaccess(myproc()->pagetable, start_va, pg_num, result_va);
   return 0;
 }
 #endif
