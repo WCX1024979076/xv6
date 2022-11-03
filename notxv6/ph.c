@@ -17,6 +17,8 @@ struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
 
+pthread_mutex_t get_lock;
+pthread_mutex_t put_lock;
 
 double
 now()
@@ -39,6 +41,7 @@ insert(int key, int value, struct entry **p, struct entry *n)
 static 
 void put(int key, int value)
 {
+
   int i = key % NBUCKET;
 
   // is the key already present?
@@ -47,6 +50,7 @@ void put(int key, int value)
     if (e->key == key)
       break;
   }
+  pthread_mutex_lock(&put_lock);       // acquire lock
   if(e){
     // update the existing key.
     e->value = value;
@@ -54,6 +58,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_mutex_unlock(&put_lock);       // acquire lock
 
 }
 
@@ -67,7 +72,6 @@ get(int key)
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key) break;
   }
-
   return e;
 }
 
@@ -117,6 +121,8 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();
   }
+  pthread_mutex_init(&get_lock, NULL); // initialize the lock
+  pthread_mutex_init(&put_lock, NULL); // initialize the lock
 
   //
   // first the puts
@@ -144,6 +150,8 @@ main(int argc, char *argv[])
     assert(pthread_join(tha[i], &value) == 0);
   }
   t1 = now();
+	pthread_mutex_destroy(&get_lock);  //销毁互斥量
+	pthread_mutex_destroy(&put_lock);  //销毁互斥量
 
   printf("%d gets, %.3f seconds, %.0f gets/second\n",
          NKEYS*nthread, t1 - t0, (NKEYS*nthread) / (t1 - t0));
