@@ -384,6 +384,10 @@ bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
+  
+  uint addr_1, addr_2;
+  struct buf *bp_1;
+  struct buf *bp_2;
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0){
@@ -417,6 +421,45 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn -= NINDIRECT;
+  if(bn < NNINDIRECT) 
+  {
+    // Load indirect block, allocating if necessary.
+    if((addr_1 = ip->addrs[NDIRECT + 1]) == 0){ // 获取一级块表的地址 addr_1
+      addr_1 = balloc(ip->dev); 
+      if(addr_1 == 0)
+        return 0;
+      ip->addrs[NDIRECT + 1] = addr_1;
+    }
+
+    bp_1 = bread(ip->dev, addr_1); // 获取一级页表 bp_1
+    a = (uint*)bp_1->data;
+
+    if((addr_2 = a[bn / NINDIRECT]) == 0) { // 获取二级块表的地址 addr_2
+      addr_2 = balloc(ip->dev);
+      if(addr_2){
+        a[bn / NINDIRECT] = addr_2;
+        log_write(bp_1);
+      }
+    }
+
+    bp_2 = bread(ip->dev, addr_2); // 获取二级页表 bp_2
+    a = (uint*)bp_2->data;
+
+    if((addr = a[bn % NINDIRECT]) == 0) { // 获取三级块表的地址 addr
+      addr = balloc(ip->dev);
+      if(addr){
+        a[bn % NINDIRECT] = addr;
+        log_write(bp_2);
+      }
+    }
+
+    brelse(bp_1);
+    brelse(bp_2);
+
+    return addr;
+  }
+
   panic("bmap: out of range");
 }
 
@@ -426,8 +469,8 @@ void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bp_1, *bp_2;
+  uint *a, *b;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -446,6 +489,27 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT + 1]){
+    bp_1 = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp_1->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j]) {
+        bp_2 = bread(ip->dev, a[j]);
+        b = (uint*)bp_2->data;
+        for(i = 0; i < NINDIRECT; i++) {
+          if(b[i])
+            bfree(ip->dev, b[i]);
+        }
+        brelse(bp_2);
+        bfree(ip->dev, a[j]);
+      }
+    }
+
+    brelse(bp_1);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
   }
 
   ip->size = 0;
@@ -481,6 +545,7 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
     uint addr = bmap(ip, off/BSIZE);
+    // printf("%d %d\n", off/BSIZE, addr);
     if(addr == 0)
       break;
     bp = bread(ip->dev, addr);
@@ -515,6 +580,7 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
     uint addr = bmap(ip, off/BSIZE);
+    // printf("%d %d\n", off/BSIZE, addr);
     if(addr == 0)
       break;
     bp = bread(ip->dev, addr);
