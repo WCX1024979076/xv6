@@ -55,6 +55,7 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+      memset(p->vma, 0, sizeof(p->vma));
   }
 }
 
@@ -322,6 +323,13 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  for (int i = 0; i < 16; i++) {
+    if (p->vma[i].valid == 1) {
+      memmove(&(np->vma[i]), &(p->vma[i]), sizeof(struct VMA));
+      filedup(p->vma[i].f);
+    }
+  }
+
   return pid;
 }
 
@@ -358,6 +366,10 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+
+  for (int i = 0; i < 16; i++) {
+    unmap_vma(&p->vma[i]);
   }
 
   begin_op();
